@@ -11,7 +11,8 @@ In pokeldn open **Plugins**, **Sources**, and add
 
 The plugins below then appear under **Browse** with an Install button. Or download a `.pokeplugin`
 from the [releases](https://github.com/bigal41/pokeldn-plugins/releases) and drop it on
-**Installed**. Every package is signed; the app shows the author's key fingerprint on install.
+**Installed**. Every package is signed; the app shows the author's key fingerprint on install, which should read
+`ZZ6W-YYM6-4DAX-GZLZ`.
 
 ## Plugins
 
