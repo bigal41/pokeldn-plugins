@@ -1,0 +1,6 @@
+# The source listing players follow under Plugins, Sources (docs/plugins.md, Sources).
+# scripts/release.py writes pokeldn-source.json from this and the packed plugins.
+name = "Alex's pokeldn plugins"
+homepage = "https://github.com/bigal41/pokeldn-plugins"
+# Each release is tagged "<id>-<version>" with the .pokeplugin attached.
+download = "https://github.com/bigal41/pokeldn-plugins/releases/download/{id}-{version}/{file}"

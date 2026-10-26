@@ -1,0 +1,7 @@
+dist/
+__pycache__/
+*.pyc
+*.pem
+.installed.json
+.DS_Store
+Thumbs.db

@@ -1,0 +1,19 @@
+{
+ "schema": 1,
+ "name": "Alex's pokeldn plugins",
+ "homepage": "https://github.com/bigal41/pokeldn-plugins",
+ "plugins": [
+  {
+   "id": "swsh-den-seed",
+   "name": "Den Seed Finder",
+   "version": "1.0.0",
+   "api": "1.8",
+   "description": "Finds a Sword/Shield Max Raid den's seed from a Pokemon you caught in it and traded to pokeldn, then lists the den's next shiny days. Pure Python, all on your computer.",
+   "author": "Alex Clark",
+   "download": "https://github.com/bigal41/pokeldn-plugins/releases/download/swsh-den-seed-1.0.0/swsh-den-seed-1.0.0.pokeplugin",
+   "sha256": "df4ac9eae89e4163fb8a13d1495fd6da837380eb4c0d6978a7682aa9648cd7dd",
+   "size": 8684,
+   "homepage": "https://github.com/bigal41/pokeldn-plugins"
+  }
+ ]
+}
