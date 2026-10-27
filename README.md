@@ -23,12 +23,14 @@ from the [releases](https://github.com/bigal41/pokeldn-plugins/releases) and dro
 ### Den Seed Finder
 
 1. Catch the den's Pokémon. Do not throw a Wishing Piece at that den afterwards.
-2. Trade it to pokeldn: **Sword & Shield**, **Trade (Host)**, then on the console Y-Comm, Link Trade,
-   local communication. Turn on **Send it back** to get the Pokémon back in the same session.
-3. **Sword & Shield**, **Den seed from a traded Pokemon**, Start. With no file chosen it reads the
-   newest Sword/Shield file in Received.
-4. The card shows the den seed and the next shiny days. Day +N means N date changes from the Pokémon
-   you caught.
+2. **Sword & Shield**, **Den seed**, Start. On the console: Y-Comm, Link Trade, local communication,
+   and offer the Pokémon when POKELDN appears. Do not confirm.
+3. pokeldn reads the offer and leaves the trade. The console shows a communication error and keeps
+   the Pokémon, ball and all. The card shows the den seed and the next shiny days. Day +N means N
+   date changes from the Pokémon you caught.
+
+Choose a Pokémon file pokeldn already received, or type the values on the Advanced tab, and no trade
+is hosted.
 
 The maths is pure Python (`swshdenseed_core.py`): the encryption constant fixes half the seed, a
 GF(2) guess-and-determine over the PID recovers the rest, and the IVs pick the den's guaranteed-IV

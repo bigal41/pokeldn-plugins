@@ -6,13 +6,13 @@
   {
    "id": "swsh-den-seed",
    "name": "Den Seed Finder",
-   "version": "1.0.0",
+   "version": "1.0.1",
    "api": "1.8",
-   "description": "Finds a Sword/Shield Max Raid den's seed from a Pokemon you caught in it and traded to pokeldn, then lists the den's next shiny days. Pure Python, all on your computer.",
+   "description": "Finds a Sword/Shield Max Raid den's seed from the Pokemon you put on the trade screen, with no trade completed, then lists the den's next shiny days. Pure Python, all on your computer.",
    "author": "Alex Clark",
-   "download": "https://github.com/bigal41/pokeldn-plugins/releases/download/swsh-den-seed-1.0.0/swsh-den-seed-1.0.0.pokeplugin",
-   "sha256": "df4ac9eae89e4163fb8a13d1495fd6da837380eb4c0d6978a7682aa9648cd7dd",
-   "size": 8684,
+   "download": "https://github.com/bigal41/pokeldn-plugins/releases/download/swsh-den-seed-1.0.1/swsh-den-seed-1.0.1.pokeplugin",
+   "sha256": "d5d87ac2589875ed272fd6e9d364122cf04c87f189bd2da8a4b911f552515181",
+   "size": 10301,
    "homepage": "https://github.com/bigal41/pokeldn-plugins"
   }
  ]

@@ -1,22 +1,28 @@
 #!/usr/bin/env python3
 """Find a Sword/Shield Max Raid den's seed from a Pokemon caught in it, then list its next shiny days.
 
-The Pokemon's encryption constant, PID and IVs come from the file pokeldn received in a trade, or are
-typed. The maths is swshdenseed_core; nothing leaves this computer.
+With nothing else given, pokeldn hosts a Link Trade and reads the Pokemon the console puts on the trade
+screen: the record arrives with the offer, before anyone confirms (docs/swsh_trade.md, The sequence,
+step 7), so the host leaves as soon as it has it and nothing is traded. A file pokeldn received, or
+typed values, skip the hosting. The maths is swshdenseed_core; nothing leaves this computer.
 """
+import _thread
 import argparse
+import json
 import os
+import runpy
 import sys
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import swshdenseed_core as core
 
+PLUGIN_ID = "swsh-den-seed"
+
 
 def build_parser():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--file", default=None, help="the caught Pokemon's .pk8 / .ek8")
-    ap.add_argument("--received", default=None, help="the Received folder; its newest .pk8 is used with no --file")
+    ap.add_argument("--file", default=None, help="the caught Pokemon's .pk8 / .ek8; empty: read it from the trade screen")
     ap.add_argument("--ec", default=None, help="encryption constant, hex, instead of a file")
     ap.add_argument("--pid", default=None, help="PID, hex, instead of a file")
     ap.add_argument("--ivs", default=None, help="HP/Atk/Def/SpA/SpD/Spe, instead of a file")
@@ -26,14 +32,18 @@ def build_parser():
     ap.add_argument("--flawless", default="auto", help="guaranteed perfect IVs, 1 to 5, or auto")
     ap.add_argument("--frames", type=int, default=10000, help="days to search for shiny frames")
     ap.add_argument("--shiny-count", type=int, default=5, help="shiny frames to list")
+    ap.add_argument("--received", default=None, help="the Received folder the offered record is saved into")
+    # The trade host, bin/swsh_host.py, when the Pokemon is read from the trade screen.
+    ap.add_argument("--offer-file", action="append", default=[], help="what POKELDN shows on the trade screen")
+    ap.add_argument("--code", default=None, help="Link Code, eight digits; empty for a plain trade")
+    ap.add_argument("--keys", default=None, help="prod.keys; the app passes Settings' file")
+    ap.add_argument("--channel", default=None)
+    ap.add_argument("--seconds", default=None)
+    ap.add_argument("--player-name", default="POKELDN")
+    ap.add_argument("--trainer-name", default="POKELDN")
+    ap.add_argument("--trainer-tid", default=None)
+    ap.add_argument("--trainer-sid", default=None)
     return ap
-
-
-def newest_record(folder):
-    files = [os.path.join(folder, n) for n in os.listdir(folder) if n.lower().endswith((".pk8", ".ek8"))]
-    if not files:
-        raise SystemExit(f"No .pk8 in {folder}: trade the den's Pokemon to pokeldn first, or choose a file.")
-    return max(files, key=os.path.getmtime)
 
 
 def parse_hex(text, what):
@@ -57,8 +67,81 @@ def parse_ivs(text):
     return ivs
 
 
+# --- reading the Pokemon from the trade screen ----------------------------------------------------
+def pokeldn_root():
+    import pokeldn
+    return os.path.dirname(os.path.dirname(os.path.abspath(pokeldn.__file__)))
+
+
+def peek(host_trade, out, taken, log=print, stop=_thread.interrupt_main):
+    """Wraps HostTrade so no trade confirms and the first offer is saved to `out`, then `stop` runs.
+    -> a function restoring the class."""
+    original_init, original_on_data = host_trade.HostTrade.__init__, host_trade.HostTrade.on_data
+
+    def __init__(self, *a, **kw):
+        kw["auto_accept"] = False                  # never send box command 4: the console keeps its Pokemon
+        original_init(self, *a, **kw)
+
+    def on_data(self, protocol, port, payload, now=None):
+        original_on_data(self, protocol, port, payload, now)
+        pk8 = self.box.get("peer_pk8")
+        if pk8 is not None and not taken:
+            taken["pk8"] = bytes(pk8)
+            os.makedirs(os.path.dirname(out) or ".", exist_ok=True)
+            with open(out, "wb") as f:
+                f.write(taken["pk8"])
+            log(f"[den] the console offers its Pokemon: saved {os.path.basename(out)}. Leaving the trade; "
+                "nothing is traded.", flush=True)
+            stop()
+
+    host_trade.HostTrade.__init__, host_trade.HostTrade.on_data = __init__, on_data
+
+    def restore():
+        host_trade.HostTrade.__init__, host_trade.HostTrade.on_data = original_init, original_on_data
+    return restore
+
+
+def from_trade_screen(args):
+    """Hosts a Link Trade until the console offers a Pokemon; -> the saved record's path."""
+    try:
+        from pokeldn.swsh import host_trade
+    except Exception as error:
+        raise SystemExit(f"pokeldn's trade host cannot be loaded here: {error}")
+    folder = args.received or os.getcwd()
+    out = os.path.join(folder, f"swsh-{time.strftime('%Y%m%d-%H%M%S')}-den.pk8")
+    taken = {}
+    restore = peek(host_trade, out, taken)
+    argv = [os.path.join(pokeldn_root(), "bin", "swsh_host.py")]
+    for offer in args.offer_file:
+        argv += ["--offer-file", offer]
+    for flag, value in (("--code", args.code), ("--keys", args.keys), ("--channel", args.channel),
+                        ("--seconds", args.seconds), ("--player-name", args.player_name),
+                        ("--trainer-name", args.trainer_name), ("--trainer-tid", args.trainer_tid),
+                        ("--trainer-sid", args.trainer_sid)):
+        if value not in (None, ""):
+            argv += [flag, str(value)]
+    print("Hosting a Link Trade. On the console: Y-Comm, Link Trade, local communication, then offer the "
+          "Pokemon you caught in the den when POKELDN appears. Do not confirm: pokeldn leaves as soon as "
+          "it has read the offer.", flush=True)
+    saved_argv, saved_path = sys.argv, list(sys.path)
+    sys.argv = argv
+    sys.path.insert(0, os.path.dirname(argv[0]))
+    try:
+        runpy.run_path(argv[0], run_name="__main__")
+    except (SystemExit, KeyboardInterrupt):
+        pass
+    finally:
+        restore()
+        sys.argv, sys.path[:] = saved_argv, saved_path
+    if not taken:
+        raise SystemExit("The host ended before the console offered a Pokemon.")
+    print(flush=True)
+    return out
+
+
+# --- the seed ------------------------------------------------------------------------------------
 def pokemon_from(args):
-    """-> (facts, source line) from the file or the typed values."""
+    """-> (facts, source line) from the file, the typed values, or the trade screen."""
     if args.ec or args.pid or args.ivs:
         if not (args.ec and args.pid and args.ivs):
             raise SystemExit("Typed values need all three: the encryption constant, the PID and the IVs.")
@@ -68,11 +151,10 @@ def pokemon_from(args):
             facts["tsv"] = (args.tid ^ args.sid) & 0xFFFF
             facts["shiny"] = core.shiny_kind(facts["pid"], facts["tsv"])
         return facts, "typed values"
-    path = args.file or (newest_record(args.received) if args.received else None)
-    if not path:
-        raise SystemExit("Choose the caught Pokemon's file, or type its EC, PID and IVs on the Advanced tab.")
+    path = args.file or from_trade_screen(args)
     with open(path, "rb") as f:
         facts = core.read_record(f.read())
+    facts["path"] = os.path.abspath(path)
     return facts, os.path.basename(path)
 
 
@@ -81,7 +163,6 @@ def species_name(number):
     if not number:
         return "Pokemon"
     try:
-        import json
         import pokeldn
         table = os.path.join(os.path.dirname(pokeldn.__file__), "swsh", "data", "species.json")
         with open(table, encoding="utf-8") as f:
@@ -149,6 +230,7 @@ def main(args):
          chips=[("Perfect IVs", str(flawless)), ("From", source[:40])])
     print("\nA day skip on the console moves the den one frame; day +N is N skips from the Pokemon you "
           "caught. Do not beat or clear the den before you get there.", flush=True)
+    return seed, flawless, facts
 
 
 if __name__ == "__main__":
