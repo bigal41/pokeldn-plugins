@@ -48,6 +48,45 @@ FINDER = Tool(
            "--received", "{received}"),
 )
 
+HOST = Tool(
+    "swsh-den-seed-host", "Host the shiny frame", "host_frame.py",
+    "Hosts the den's shiny day as a Max Raid your console joins, so you catch it now instead of "
+    "skipping days. Built from the Pokemon you caught there, rolled as that day's seed.",
+    ("Run Den seed first and note a shiny day from its list.",
+     "Enter that day, choose the Pokemon our player brings, and start the host.",
+     "Y-Comm in local wireless mode: join POKELDN's raid from the list.",
+     "Press Ready: the console runs the battle and our Pokemon fights at your side.",
+     "Win and catch: the Pokemon is that day's roll of the den, shiny for your trainer.",
+     "A black screen with the raid music is a start the console lost; the host recovers it once. If it "
+     "stays black, press Stop, close the game fully, reopen it and start again."),
+    fields=(
+        Field("--day", "Shiny day", "number", required=True,
+              help="The +N day from the finder's list. Day 0 is the Pokemon you caught."),
+        Field("--offer-file", "Our Pokemon", "pokemon", required=True,
+              help="The Pokemon our player brings to the raid. PKHeX checks it is legal."),
+        Field("--seed", "Den seed (hex)",
+              help="16 hex digits. Empty: the seed Den seed found last."),
+        Field("--file", "Pokemon caught in the den", "file", exts=("pk8", "ek8"),
+              help="The frame's Pokemon is rebuilt from it: same species, trainer and met data. "
+                   "Empty: the file Den seed read last."),
+        Field("--flawless", "Guaranteed perfect IVs", "choice", default="auto",
+              choices=(("auto", "As Den seed found"),) + FLAWLESS,
+              help="The den's guaranteed 31s, as Den seed reported for this den."),
+        Field("--ability-rule", "Den ability rule", "choice", default="auto", hidden=True,
+              choices=(("auto", "Work it out"), ("12", "Ability 1 or 2"), ("12H", "Ability 1, 2 or hidden")),
+              help="Which abilities the den can give. Work it out builds both and keeps the one PKHeX accepts."),
+        Field("--prepare-only", "Build the file only, do not host", "switch", hidden=True,
+              help="Writes the frame's .pk8 into the plugin's data folder and stops."),
+        Field("--channel", "Channel", "choice", default="6", choices=CHANNELS, hidden=True,
+              help="The wireless channel of the network pokeldn hosts."),
+        Field("--seconds", "Time limit (seconds)", "number", default="900", hidden=True,
+              help="How long the host stays up after Start, then it closes on its own."),
+    ),
+    fixed=("--raid-console-serves", "--player-name", "{ot}", "--trainer-name", "{ot}",
+           "--trainer-tid", "{tid}", "--trainer-sid", "{sid}"),
+)
+
 
 def register(api):
     api.add_tool("swsh", FINDER)
+    api.add_tool("swsh", HOST)

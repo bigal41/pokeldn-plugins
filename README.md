@@ -37,6 +37,24 @@ GF(2) guess-and-determine over the PID recovers the rest, and the IVs pick the d
 count. A shiny takes a few seconds, anything else is instant. Event dens with forced shiny or IV
 rules, Dynamax Adventure Pokémon and hatched Pokémon are not den rolls and are reported as no fit.
 
+#### Host the shiny frame
+
+Instead of skipping N days, host that day's raid yourself. **Sword & Shield**, **Host the shiny
+frame**: enter the day from Den seed's list, choose the Pokémon our player brings, Start, then join
+POKELDN's raid from Y-Comm in local wireless mode and catch it.
+
+The frame's Pokémon is rebuilt from the one you caught in that den, so it keeps the species, trainer
+and met data, and takes everything the den rolls on that day from the seed: encryption constant,
+PID, IVs, ability, gender, nature, height, weight, level and Dynamax level. PKHeX checks the file
+before pokeldn's own Max Raid host serves it. The console shows the boss shiny and, at the catch,
+writes a PID for your trainer that keeps it shiny, as a real den does: verified on a retail Shield,
+square shiny in the box. Gigantamax dens are not handled yet.
+
+Two things seen on a retail console: a black screen with the raid music is a start the console
+lost, which the host recovers once by republishing its server table, and a game that keeps stalling
+is fixed by closing it fully and reopening. Do not change the console's date to test anything: every
+date change moves your real den by one frame.
+
 ## Releasing (maintainer notes)
 
     pip install pycryptodome

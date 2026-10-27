@@ -268,9 +268,197 @@ def read_record(raw):
     iv32 = u32(0x8C)
     tid, sid, pid = u16(0x0C), u16(0x0E), u32(0x1C)
     return {"ec": u32(0), "pid": pid, "ivs": tuple((iv32 >> s) & 31 for s in IV_SHIFTS), "tid": tid,
-            "sid": sid, "tsv": tid ^ sid, "species": u16(0x08), "shiny": shiny_kind(pid, tid ^ sid),
-            "version": plain[0xDE]}
+            "sid": sid, "tsv": tid ^ sid, "species": u16(0x08), "form": u16(0x24),
+            "shiny": shiny_kind(pid, tid ^ sid), "version": plain[0xDE],
+            "moves": struct.unpack_from("<4H", plain, 0x72), "met_level": plain[0x125] & 0x7F,
+            "dynamax": plain[0x90]}
 
 
 def ivs_text(ivs):
     return "/".join(str(v) for v in ivs)
+
+
+# --- a frame's whole Pokemon, and writing it over a caught record ---------------------------------
+# After the IVs the den draws, in order: the ability slot (when the den allows a choice), the gender
+# (when the species has a ratio), the nature (Toxtricity from its own tables) and the height and
+# weight scalars; PKHeX's RaidRNG checks every one of them against the seed.
+TOXTRICITY = 849
+TOXTRICITY_NATURES = ((3, 4, 2, 8, 9, 19, 22, 11, 13, 14, 0, 6, 24),
+                      (1, 5, 7, 10, 12, 15, 16, 17, 18, 20, 21, 23))
+ABILITY_RULES = {"12": 2, "12H": 3}      # draws: first two slots, or all three including the hidden one
+NATURES = ("Hardy", "Lonely", "Brave", "Adamant", "Naughty", "Bold", "Docile", "Relaxed", "Impish", "Lax",
+           "Timid", "Hasty", "Serious", "Jolly", "Naive", "Modest", "Mild", "Quiet", "Bashful", "Rash",
+           "Calm", "Gentle", "Sassy", "Careful", "Quirky")
+
+
+def frame_values(seed, flawless, tsv, gender_ratio, ability_rule="12H", species=0, form=0):
+    """Everything the den rolls for `seed`: the caught Pokemon's EC, PID (shiny for `tsv`), IVs,
+    ability slot, gender, nature, height and weight. `ability_rule` is "12", "12H" or a fixed slot
+    0-2; `gender_ratio` is the species' PersonalInfo ratio (0 male, 254 female, 255 genderless)."""
+    mon = raid_pokemon(seed, flawless, tsv)
+    rng = Xoroshiro(seed)
+    for _ in range(3):
+        rng.next_uint(MASK32)
+    ivs = [-1] * 6                                       # replay the IV draws to reach the same state
+    for _ in range(flawless):
+        while True:
+            i = rng.next_uint(6)
+            if ivs[i] == -1:
+                break
+        ivs[i] = 31
+    for i in range(6):
+        if ivs[i] == -1:
+            ivs[i] = rng.next_uint(32)
+    if ability_rule in ABILITY_RULES:
+        slot = rng.next_uint(ABILITY_RULES[ability_rule])
+    else:
+        slot = int(ability_rule)
+    if gender_ratio == 255:
+        gender = 2
+    elif gender_ratio == 254:
+        gender = 1
+    elif gender_ratio == 0:
+        gender = 0
+    else:
+        gender = 1 if rng.next_uint(253) + 1 < gender_ratio else 0
+    if species == TOXTRICITY:
+        table = TOXTRICITY_NATURES[1 if form else 0]
+        nature = table[rng.next_uint(len(table))]
+    else:
+        nature = rng.next_uint(25)
+    height = rng.next_uint(0x81) + rng.next_uint(0x80)
+    weight = rng.next_uint(0x81) + rng.next_uint(0x80)
+    mon.update(ability_slot=slot, gender=gender, nature=nature, height=height, weight=weight)
+    return mon
+
+
+# The seed also sets the raid's level and starting Dynamax level (PKHeX EncounterStatic8N.IsPossibleSeed):
+# a fresh generator at the seed gives the level's offset above the rank's floor, then the Dynamax boost.
+LEVEL_CAPS = (15, 20, 25, 30, 35, 40, 45, 50, 55, 60)     # (min, max) per rank 0-4, i.e. 1 to 5 stars
+
+
+def rank_of(met_level):
+    """The den rank (0-4, stars minus one) a met level belongs to, or None off the den grid."""
+    offset = met_level - 15
+    if offset < 0 or offset % 10 > 5 or offset // 10 > 4:
+        return None
+    return offset // 10
+
+
+def frame_level(seed, rank):
+    """-> (level, dynamax level) the den gives a raid of `rank` at this seed."""
+    rng = Xoroshiro(seed)
+    level = LEVEL_CAPS[rank * 2] + rng.next_uint(6)
+    base = 6 if rank == 4 else rank + 1
+    return level, base + rng.next_uint(3 if rank == 4 else 2)
+
+
+def experience(level, growth):
+    """The least experience at `level` for one of the six growth curves (PersonalInfo's EXPGrowth)."""
+    n = level
+    if growth == 0:
+        return n ** 3
+    if growth == 1:
+        if n <= 50:
+            return n ** 3 * (100 - n) // 50
+        if n <= 68:
+            return n ** 3 * (150 - n) // 100
+        if n <= 98:
+            return n ** 3 * ((1911 - 10 * n) // 3) // 500
+        return n ** 3 * (160 - n) // 100
+    if growth == 2:
+        if n <= 15:
+            return n ** 3 * ((n + 1) // 3 + 24) // 50
+        if n <= 36:
+            return n ** 3 * (n + 14) // 50
+        return n ** 3 * (n // 2 + 32) // 50
+    if growth == 3:
+        return max(0, 6 * n ** 3 // 5 - 15 * n ** 2 + 100 * n - 140)
+    if growth == 4:
+        return 4 * n ** 3 // 5
+    return 5 * n ** 3 // 4
+
+
+def stats(base, ivs, level, nature, evs=(0,) * 6):
+    """The six party stats, HP Atk Def Spe SpA SpD, from base stats in that order."""
+    out = [(2 * b + iv + ev // 4) * level // 100 + 5 for b, iv, ev in zip(base, ivs, evs)]
+    out[0] += level + 5
+    up, down = nature // 5 + 1, nature % 5 + 1          # natures run Atk Def Spe SpA SpD
+    if up != down:
+        out[up] = out[up] * 110 // 100
+        out[down] = out[down] * 90 // 100
+    return tuple(out)
+
+
+def decrypt_record(raw):
+    """-> the plain, unshuffled record of a .pk8 / .ek8, or PKHeX's plain export as is."""
+    if len(raw) not in (STORED, PARTY):
+        raise ValueError(f"{len(raw)} bytes; a Sword/Shield record is {STORED} or {PARTY}")
+    want = struct.unpack_from("<H", raw, 6)[0]
+    if _checksum(raw) == want:
+        return bytes(raw)
+    ec = struct.unpack_from("<I", raw, 0)[0]
+    body = _crypt(raw[HEADER:STORED], ec)
+    order = BLOCK_ORDER[(ec >> 13) & 31]
+    plain = bytes(raw[:HEADER]) + b"".join(body[src * BLOCK:(src + 1) * BLOCK] for src in order)
+    if len(raw) == PARTY:
+        plain += _crypt(raw[STORED:], ec)
+    if _checksum(plain) != want:
+        raise ValueError("not a Sword/Shield Pokemon file: the checksum does not match")
+    return plain
+
+
+def encrypt_record(plain):
+    """-> the encrypted record, checksum written, blocks shuffled by the EC, party tail included."""
+    body = bytearray(plain)
+    struct.pack_into("<H", body, 6, _checksum(body))
+    ec = struct.unpack_from("<I", body, 0)[0]
+    order = BLOCK_ORDER[(ec >> 13) & 31]
+    inverse = [order.index(block) for block in range(4)]
+    shuffled = bytes(body[:HEADER]) + b"".join(body[HEADER + src * BLOCK:HEADER + (src + 1) * BLOCK]
+                                               for src in inverse)
+    out = shuffled + _crypt(bytes(body[STORED:]), ec) if len(body) == PARTY else shuffled
+    return out[:HEADER] + _crypt(out[HEADER:STORED], ec) + out[STORED:]
+
+
+def apply_frame(plain, values, abilities, base, *, level=None, growth=None, moves=None, move_pp=None,
+                dynamax=None):
+    """-> the caught record `plain` rewritten as the frame's roll: EC, PID, IVs, ability (ids in
+    `abilities`, one per slot), gender, nature, height, weight, hyper training cleared, party stats
+    recomputed from `base` (HP Atk Def Spe SpA SpD) when the record carries them. With `level` the
+    level, met level and experience (`growth` curve) change too; `moves` are four ids with `move_pp`
+    their PP; `dynamax` the Dynamax level."""
+    out = bytearray(plain)
+    if level is not None:
+        out[0x125] = (out[0x125] & 0x80) | level
+        struct.pack_into("<I", out, 0x10, experience(level, growth))
+        if len(out) == PARTY:
+            out[0x148] = level
+    if moves is not None:
+        struct.pack_into("<4H", out, 0x72, *moves)
+        out[0x7A:0x7E] = bytes(move_pp)
+        out[0x7E:0x82] = bytes(4)
+    if dynamax is not None:
+        out[0x90] = dynamax
+    struct.pack_into("<I", out, 0, values["ec"])
+    struct.pack_into("<I", out, 0x1C, values["pid"])
+    iv32 = struct.unpack_from("<I", out, 0x8C)[0] & ~((1 << 30) - 1)
+    for v, s in zip(values["ivs"], IV_SHIFTS):
+        iv32 |= v << s
+    struct.pack_into("<I", out, 0x8C, iv32)
+    struct.pack_into("<H", out, 0x14, abilities[values["ability_slot"]])
+    out[0x16] = (out[0x16] & ~0x07) | (1 << values["ability_slot"])
+    out[0x22] = (out[0x22] & ~0x0C) | (values["gender"] << 2)
+    out[0x20] = values["nature"]
+    out[0x21] = values["nature"]                        # the stat nature, before any mint
+    out[0x50], out[0x51] = values["height"], values["weight"]
+    out[0x126] &= ~0x3F                                  # hyper training is not part of the roll
+    if len(out) == PARTY:
+        level = out[0x148]
+        evs = tuple(out[0x26:0x2C])                      # stored as HP Atk Def Spe SpA SpD already
+        ivs = values["ivs"]
+        order = (ivs[0], ivs[1], ivs[2], ivs[5], ivs[3], ivs[4])        # to HP Atk Def Spe SpA SpD
+        party = stats(base, order, level, values["nature"], evs)
+        struct.pack_into("<6H", out, 0x14A, *party)
+        struct.pack_into("<H", out, 0x8A, party[0])
+    return bytes(out)

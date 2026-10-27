@@ -230,7 +230,25 @@ def main(args):
          chips=[("Perfect IVs", str(flawless)), ("From", source[:40])])
     print("\nA day skip on the console moves the den one frame; day +N is N skips from the Pokemon you "
           "caught. Do not beat or clear the den before you get there.", flush=True)
+    remember(seed, flawless, facts)
     return seed, flawless, facts
+
+
+def remember(seed, flawless, facts):
+    """Keeps the result for Host the shiny frame: the seed, the IV count and the file it came from."""
+    try:
+        from pokeldn.plugins import data_folder
+        folder = str(data_folder(PLUGIN_ID))
+    except Exception:
+        folder = os.path.join(os.path.dirname(os.path.abspath(__file__)), "data")
+    try:
+        os.makedirs(folder, exist_ok=True)
+        with open(os.path.join(folder, "last.json"), "w", encoding="utf-8") as f:
+            json.dump({"seed": f"{seed:016X}", "flawless": flawless, "file": facts.get("path", ""),
+                       "species": facts["species"], "tid": facts.get("tid"), "sid": facts.get("sid"),
+                       "ivs": list(facts["ivs"]), "shiny": facts["shiny"], "when": time.time()}, f, indent=1)
+    except OSError as error:
+        print(f"Could not keep the result for Host the shiny frame: {error}", flush=True)
 
 
 if __name__ == "__main__":
